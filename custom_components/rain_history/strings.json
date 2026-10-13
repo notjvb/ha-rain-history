@@ -1,0 +1,46 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Rain History",
+        "description": "Observed rain totals for a location, from Open-Meteo. No API key needed.",
+        "data": {
+          "location": "Location",
+          "rain_year_start_month": "Rain year starts in",
+          "include_last_rain_year": "Also show last rain year's total"
+        },
+        "data_description": {
+          "rain_year_start_month": "October matches the California water year (Oct 1 to Sep 30)."
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "Rain History is already set up for this location."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Rain History",
+        "data": {
+          "location": "Location",
+          "rain_year_start_month": "Rain year starts in",
+          "include_last_rain_year": "Also show last rain year's total"
+        },
+        "data_description": {
+          "rain_year_start_month": "October matches the California water year (Oct 1 to Sep 30)."
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "today": { "name": "Today" },
+      "last_3_days": { "name": "Last 3 days" },
+      "last_7_days": { "name": "Last 7 days" },
+      "last_30_days": { "name": "Last 30 days" },
+      "this_rain_year": { "name": "This rain year" },
+      "last_rain_year": { "name": "Last rain year" }
+    }
+  }
+}

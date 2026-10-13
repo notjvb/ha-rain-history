@@ -1,0 +1,12 @@
+{
+  "domain": "rain_history",
+  "name": "Rain History",
+  "codeowners": ["@notjvb"],
+  "config_flow": true,
+  "documentation": "https://github.com/notjvb/ha-rain-history",
+  "integration_type": "service",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/notjvb/ha-rain-history/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}
