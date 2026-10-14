@@ -17,7 +17,7 @@ All sensors belong to one device named **Rain**:
 
 Values are in inches when Home Assistant uses US customary units, and in millimetres otherwise.
 
-The integration updates once an hour. To get fresh numbers right before an automation decides something, call `homeassistant.update_entity` on any of the sensors first.
+The integration updates once an hour, at a random minute picked at startup (never near the top of the hour, when Open-Meteo is busiest). To get fresh numbers right before an automation decides something, call `homeassistant.update_entity` on any of the sensors first.
 
 Daily totals for the last 30 days come from Open-Meteo's forecast API. Older days come from its historical forecast archive, which is fetched once a day. These are modeled values for the location, not readings from a rain gauge.
 

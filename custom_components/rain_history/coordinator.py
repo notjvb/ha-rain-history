@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import logging
+import random
+from collections.abc import Callable
+from datetime import datetime
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_LATITUDE, CONF_LONGITUDE
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.event import async_track_time_change
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 from homeassistant.util.unit_system import US_CUSTOMARY_SYSTEM
 
 from .api import OpenMeteoError, OpenMeteoRainClient, RainTotals
@@ -19,7 +24,8 @@ from .const import (
     DEFAULT_INCLUDE_LAST_RAIN_YEAR,
     DEFAULT_RAIN_YEAR_START_MONTH,
     DOMAIN,
-    UPDATE_INTERVAL,
+    POLL_MINUTE_RANGE,
+    STALE_DATA_TOLERANCE,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -38,7 +44,8 @@ class RainHistoryCoordinator(DataUpdateCoordinator[RainTotals]):
             _LOGGER,
             config_entry=entry,
             name=DOMAIN,
-            update_interval=UPDATE_INTERVAL,
+            # No interval: async_start_polling runs refreshes on a fixed minute instead.
+            update_interval=None,
         )
         settings = {**entry.data, **entry.options}
         location = settings[CONF_LOCATION]
@@ -55,6 +62,18 @@ class RainHistoryCoordinator(DataUpdateCoordinator[RainTotals]):
             location[CONF_LONGITUDE],
             self.inches,
         )
+        self._last_success: datetime | None = None
+
+    def async_start_polling(self) -> Callable[[], None]:
+        """Refresh hourly at a random minute:second. Returns the unsubscribe callback."""
+        minute = random.randrange(*POLL_MINUTE_RANGE)
+        second = random.randrange(60)
+        _LOGGER.debug("Polling Open-Meteo hourly at :%02d:%02d", minute, second)
+
+        async def _poll(_now: datetime) -> None:
+            await self.async_refresh()
+
+        return async_track_time_change(self.hass, _poll, minute=minute, second=second)
 
     async def _async_update_data(self) -> RainTotals:
         try:
@@ -62,7 +81,19 @@ class RainHistoryCoordinator(DataUpdateCoordinator[RainTotals]):
                 self.start_month, self.include_last_rain_year
             )
         except OpenMeteoError as err:
+            if (
+                self.data is not None
+                and self._last_success is not None
+                and dt_util.utcnow() - self._last_success < STALE_DATA_TOLERANCE
+            ):
+                _LOGGER.warning(
+                    "Open-Meteo request failed, keeping totals from %s: %s",
+                    self._last_success.isoformat(timespec="minutes"),
+                    err,
+                )
+                return self.data
             raise UpdateFailed(f"Open-Meteo request failed: {err}") from err
+        self._last_success = dt_util.utcnow()
         if totals.this_rain_year is None:
             _LOGGER.warning("Couldn't fetch rain-year history from Open-Meteo; will retry")
         return totals
