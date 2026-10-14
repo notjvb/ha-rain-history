@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_LATITUDE, CONF_LONGITUDE
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 from homeassistant.util.unit_system import US_CUSTOMARY_SYSTEM
 
 from .api import OpenMeteoError, OpenMeteoRainClient, RainTotals
@@ -19,6 +21,7 @@ from .const import (
     DEFAULT_INCLUDE_LAST_RAIN_YEAR,
     DEFAULT_RAIN_YEAR_START_MONTH,
     DOMAIN,
+    STALE_DATA_TOLERANCE,
     UPDATE_INTERVAL,
 )
 
@@ -55,6 +58,7 @@ class RainHistoryCoordinator(DataUpdateCoordinator[RainTotals]):
             location[CONF_LONGITUDE],
             self.inches,
         )
+        self._last_success: datetime | None = None
 
     async def _async_update_data(self) -> RainTotals:
         try:
@@ -62,7 +66,19 @@ class RainHistoryCoordinator(DataUpdateCoordinator[RainTotals]):
                 self.start_month, self.include_last_rain_year
             )
         except OpenMeteoError as err:
+            if (
+                self.data is not None
+                and self._last_success is not None
+                and dt_util.utcnow() - self._last_success < STALE_DATA_TOLERANCE
+            ):
+                _LOGGER.warning(
+                    "Open-Meteo request failed, keeping totals from %s: %s",
+                    self._last_success.isoformat(timespec="minutes"),
+                    err,
+                )
+                return self.data
             raise UpdateFailed(f"Open-Meteo request failed: {err}") from err
+        self._last_success = dt_util.utcnow()
         if totals.this_rain_year is None:
             _LOGGER.warning("Couldn't fetch rain-year history from Open-Meteo; will retry")
         return totals

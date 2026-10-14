@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any
@@ -15,9 +16,17 @@ HISTORICAL_URL = "https://historical-forecast-api.open-meteo.com/v1/forecast"
 # Days in the "recent" window, today included. Covers today / 3 / 7 / 30 day totals.
 RECENT_DAYS = 30
 
+# Open-Meteo's free API sheds load with 429/5xx, mostly around the top of the hour.
+RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
+RETRY_DELAYS = (5, 20, 60)  # seconds before each retry
+
 
 class OpenMeteoError(Exception):
     """Open-Meteo request failed."""
+
+    def __init__(self, message: str, *, transient: bool = False) -> None:
+        super().__init__(message)
+        self.transient = transient
 
 
 @dataclass
@@ -68,8 +77,20 @@ class OpenMeteoRainClient:
         # Historical days only change once a day, so keep them between hourly updates.
         self._history_range: tuple[date, date] | None = None
         self._history: dict[date, float] = {}
+        # Every day seen so far, so a failed history refetch can fall back on it.
+        self._known_days: dict[date, float] = {}
 
     async def _get_daily(self, url: str, **params: Any) -> dict[date, float]:
+        for delay in (*RETRY_DELAYS, None):
+            try:
+                return await self._get_daily_once(url, **params)
+            except OpenMeteoError as err:
+                if not err.transient or delay is None:
+                    raise
+            await asyncio.sleep(delay)
+        raise AssertionError("unreachable")
+
+    async def _get_daily_once(self, url: str, **params: Any) -> dict[date, float]:
         query = {
             "latitude": self._latitude,
             "longitude": self._longitude,
@@ -85,9 +106,15 @@ class OpenMeteoRainClient:
                 payload = await resp.json(content_type=None)
                 if resp.status != 200:
                     reason = payload.get("reason") if isinstance(payload, dict) else None
-                    raise OpenMeteoError(f"HTTP {resp.status}: {reason or 'error'}")
-        except (aiohttp.ClientError, TimeoutError, ValueError) as err:
-            raise OpenMeteoError(str(err)) from err
+                    raise OpenMeteoError(
+                        f"HTTP {resp.status}: {reason or 'error'}",
+                        transient=resp.status in RETRY_STATUSES,
+                    )
+        except (aiohttp.ClientError, TimeoutError) as err:
+            raise OpenMeteoError(str(err) or type(err).__name__, transient=True) from err
+        except ValueError as err:
+            # Non-JSON body, e.g. an HTML error page from a proxy.
+            raise OpenMeteoError(f"Bad response: {err}", transient=True) from err
         return _parse_daily(payload)
 
     async def async_get_totals(
@@ -117,9 +144,23 @@ class OpenMeteoRainClient:
                 )
                 self._history_range = (history_start, history_end)
             except OpenMeteoError:
-                history_ok = False
+                # The range moves by a day each day; earlier fetches usually cover it.
+                needed = history_start
+                while needed <= history_end and needed in self._known_days:
+                    needed += timedelta(days=1)
+                history_ok = needed > history_end
+                if history_ok:
+                    self._history = {
+                        d: mm
+                        for d, mm in self._known_days.items()
+                        if history_start <= d <= history_end
+                    }
+                    self._history_range = None  # still try a fresh fetch next update
 
         days = {**self._history, **recent}
+        self._known_days = {
+            d: mm for d, mm in {**self._known_days, **days}.items() if d >= history_start
+        }
 
         def total(first: date, last: date) -> float:
             return round(sum(mm for d, mm in days.items() if first <= d <= last), 2)

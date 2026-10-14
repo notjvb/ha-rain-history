@@ -13,3 +13,7 @@ DEFAULT_RAIN_YEAR_START_MONTH = 10
 DEFAULT_INCLUDE_LAST_RAIN_YEAR = True
 
 UPDATE_INTERVAL = timedelta(hours=1)
+
+# Keep showing the last good totals through an Open-Meteo outage this long
+# before the sensors go unavailable.
+STALE_DATA_TOLERANCE = timedelta(hours=6)
