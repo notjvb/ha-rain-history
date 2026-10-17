@@ -20,10 +20,13 @@ from .api import OpenMeteoError, OpenMeteoRainClient, RainTotals
 from .const import (
     CONF_INCLUDE_LAST_RAIN_YEAR,
     CONF_LOCATION,
+    CONF_RAIN_THRESHOLD,
     CONF_RAIN_YEAR_START_MONTH,
     DEFAULT_INCLUDE_LAST_RAIN_YEAR,
+    DEFAULT_RAIN_THRESHOLD_MM,
     DEFAULT_RAIN_YEAR_START_MONTH,
     DOMAIN,
+    MM_PER_INCH,
     POLL_MINUTE_RANGE,
     STALE_DATA_TOLERANCE,
 )
@@ -56,6 +59,11 @@ class RainHistoryCoordinator(DataUpdateCoordinator[RainTotals]):
         self.include_last_rain_year = settings.get(
             CONF_INCLUDE_LAST_RAIN_YEAR, DEFAULT_INCLUDE_LAST_RAIN_YEAR
         )
+        # Stored in mm; the client works in inches when HA does.
+        threshold_mm = float(settings.get(CONF_RAIN_THRESHOLD, DEFAULT_RAIN_THRESHOLD_MM))
+        self.rain_threshold = (
+            round(threshold_mm / MM_PER_INCH, 2) if self.inches else threshold_mm
+        )
         self.client = OpenMeteoRainClient(
             async_get_clientsession(hass),
             location[CONF_LATITUDE],
@@ -78,7 +86,7 @@ class RainHistoryCoordinator(DataUpdateCoordinator[RainTotals]):
     async def _async_update_data(self) -> RainTotals:
         try:
             totals = await self.client.async_get_totals(
-                self.start_month, self.include_last_rain_year
+                self.start_month, self.include_last_rain_year, self.rain_threshold
             )
         except OpenMeteoError as err:
             if (

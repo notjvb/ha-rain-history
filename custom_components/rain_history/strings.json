@@ -7,10 +7,12 @@
         "data": {
           "location": "Location",
           "rain_year_start_month": "Rain year starts in",
-          "include_last_rain_year": "Also show last rain year's total"
+          "include_last_rain_year": "Also show last rain year's total",
+          "rain_threshold": "Counts as rain at"
         },
         "data_description": {
-          "rain_year_start_month": "October matches the California water year (Oct 1 to Sep 30)."
+          "rain_year_start_month": "October matches the California water year (Oct 1 to Sep 30).",
+          "rain_threshold": "A day needs at least this much rain to count for the Last rain and Days since rain sensors."
         }
       }
     },
@@ -25,10 +27,12 @@
         "data": {
           "location": "Location",
           "rain_year_start_month": "Rain year starts in",
-          "include_last_rain_year": "Also show last rain year's total"
+          "include_last_rain_year": "Also show last rain year's total",
+          "rain_threshold": "Counts as rain at"
         },
         "data_description": {
-          "rain_year_start_month": "October matches the California water year (Oct 1 to Sep 30)."
+          "rain_year_start_month": "October matches the California water year (Oct 1 to Sep 30).",
+          "rain_threshold": "A day needs at least this much rain to count for the Last rain and Days since rain sensors."
         }
       }
     }
@@ -40,7 +44,9 @@
       "last_7_days": { "name": "Last 7 days" },
       "last_30_days": { "name": "Last 30 days" },
       "this_rain_year": { "name": "This rain year" },
-      "last_rain_year": { "name": "Last rain year" }
+      "last_rain_year": { "name": "Last rain year" },
+      "last_rain": { "name": "Last rain" },
+      "days_since_rain": { "name": "Days since rain" }
     }
   }
 }
