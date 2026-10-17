@@ -15,6 +15,8 @@ HISTORICAL_URL = "https://historical-forecast-api.open-meteo.com/v1/forecast"
 
 # Days in the "recent" window, today included. Covers today / 3 / 7 / 30 day totals.
 RECENT_DAYS = 30
+# Always keep at least this much history, so "last rain" can see back past a dry season.
+LAST_RAIN_LOOKBACK_DAYS = 365
 
 # Open-Meteo's free API sheds load with 429/5xx, mostly around the top of the hour.
 RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
@@ -31,7 +33,11 @@ class OpenMeteoError(Exception):
 
 @dataclass
 class RainTotals:
-    """Rain totals in the client's unit. Year totals are None when history couldn't be fetched."""
+    """Rain totals in the client's unit. Year totals are None when history couldn't be fetched.
+
+    last_rain is the latest day with at least the rain threshold; None if there was none
+    in the lookback window (or history couldn't be fetched and none was in recent days).
+    """
 
     today: float
     last_3_days: float
@@ -41,6 +47,13 @@ class RainTotals:
     last_rain_year: float | None
     rain_year_start: date
     as_of: date
+    last_rain: date | None
+    last_rain_amount: float | None
+    last_rain_searched_since: date
+
+    @property
+    def days_since_rain(self) -> int | None:
+        return None if self.last_rain is None else (self.as_of - self.last_rain).days
 
 
 def rain_year_start(today: date, start_month: int) -> date:
@@ -118,8 +131,9 @@ class OpenMeteoRainClient:
         return _parse_daily(payload)
 
     async def async_get_totals(
-        self, start_month: int, include_last_rain_year: bool
+        self, start_month: int, include_last_rain_year: bool, rain_threshold: float
     ) -> RainTotals:
+        """Totals for the location's today. rain_threshold is in the client's unit."""
         # Today's value includes rain still forecast for the rest of the day.
         recent = await self._get_daily(
             FORECAST_URL, past_days=RECENT_DAYS - 1, forecast_days=1
@@ -130,7 +144,10 @@ class OpenMeteoRainClient:
         last_ry_start = ry_start.replace(year=ry_start.year - 1)
 
         history_ok = True
-        history_start = last_ry_start if include_last_rain_year else ry_start
+        history_start = min(
+            last_ry_start if include_last_rain_year else ry_start,
+            today - timedelta(days=LAST_RAIN_LOOKBACK_DAYS),
+        )
         history_end = today - timedelta(days=RECENT_DAYS)
         if history_start <= history_end and self._history_range != (
             history_start,
@@ -168,6 +185,12 @@ class OpenMeteoRainClient:
         def last_n(n: int) -> float:
             return total(today - timedelta(days=n - 1), today)
 
+        # Today counts once its total (including rain still forecast) reaches the threshold,
+        # same as the "today" sensor. Search every day seen, so a failed history refetch
+        # doesn't leave a gap between stale history and the recent window.
+        seen = self._known_days
+        last_rain = max((d for d, mm in seen.items() if mm >= rain_threshold), default=None)
+
         return RainTotals(
             today=last_n(1),
             last_3_days=last_n(3),
@@ -181,4 +204,7 @@ class OpenMeteoRainClient:
             ),
             rain_year_start=ry_start,
             as_of=today,
+            last_rain=last_rain,
+            last_rain_amount=None if last_rain is None else round(seen[last_rain], 2),
+            last_rain_searched_since=min(seen),
         )

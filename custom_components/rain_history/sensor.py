@@ -1,9 +1,10 @@
-"""Rain total sensors."""
+"""Rain total and last-rain sensors."""
 
 from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import date
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -11,7 +12,7 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
     SensorStateClass,
 )
-from homeassistant.const import UnitOfPrecipitationDepth
+from homeassistant.const import UnitOfPrecipitationDepth, UnitOfTime
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -24,7 +25,10 @@ from .coordinator import RainHistoryConfigEntry, RainHistoryCoordinator
 
 @dataclass(frozen=True, kw_only=True)
 class RainSensorDescription(SensorEntityDescription):
-    value_fn: Callable[[RainTotals], float | None]
+    value_fn: Callable[[RainTotals], float | date | None]
+    # Rain totals get their unit and precision from HA's unit system.
+    device_class: SensorDeviceClass | None = SensorDeviceClass.PRECIPITATION
+    state_class: SensorStateClass | str | None = SensorStateClass.MEASUREMENT
 
 
 # The device is named "Rain", so these become sensor.rain_today, sensor.rain_last_3_days, ...
@@ -44,6 +48,22 @@ SENSORS: tuple[RainSensorDescription, ...] = (
         key="this_rain_year",
         translation_key="this_rain_year",
         value_fn=lambda t: t.this_rain_year,
+    ),
+    # sensor.rain_last_rain and sensor.rain_days_since_rain.
+    RainSensorDescription(
+        key="last_rain",
+        translation_key="last_rain",
+        device_class=SensorDeviceClass.DATE,
+        state_class=None,
+        value_fn=lambda t: t.last_rain,
+    ),
+    RainSensorDescription(
+        key="days_since_rain",
+        translation_key="days_since_rain",
+        device_class=None,
+        native_unit_of_measurement=UnitOfTime.DAYS,
+        suggested_display_precision=0,
+        value_fn=lambda t: t.days_since_rain,
     ),
 )
 
@@ -65,11 +85,9 @@ async def async_setup_entry(
 
 
 class RainSensor(CoordinatorEntity[RainHistoryCoordinator], SensorEntity):
-    """A rain total over a fixed window."""
+    """A rain total over a fixed window, or when it last rained."""
 
     _attr_has_entity_name = True
-    _attr_device_class = SensorDeviceClass.PRECIPITATION
-    _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_attribution = "Weather data by Open-Meteo.com"
     entity_description: RainSensorDescription
 
@@ -80,12 +98,13 @@ class RainSensor(CoordinatorEntity[RainHistoryCoordinator], SensorEntity):
         self.entity_description = description
         entry = coordinator.config_entry
         self._attr_unique_id = f"{entry.entry_id}_{description.key}"
-        self._attr_native_unit_of_measurement = (
-            UnitOfPrecipitationDepth.INCHES
-            if coordinator.inches
-            else UnitOfPrecipitationDepth.MILLIMETERS
-        )
-        self._attr_suggested_display_precision = 2 if coordinator.inches else 1
+        if description.device_class == SensorDeviceClass.PRECIPITATION:
+            self._attr_native_unit_of_measurement = (
+                UnitOfPrecipitationDepth.INCHES
+                if coordinator.inches
+                else UnitOfPrecipitationDepth.MILLIMETERS
+            )
+            self._attr_suggested_display_precision = 2 if coordinator.inches else 1
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
             name="Rain",
@@ -95,16 +114,23 @@ class RainSensor(CoordinatorEntity[RainHistoryCoordinator], SensorEntity):
         )
 
     @property
-    def native_value(self) -> float | None:
+    def native_value(self) -> float | date | None:
         return self.entity_description.value_fn(self.coordinator.data)
 
     @property
-    def extra_state_attributes(self) -> dict[str, str]:
+    def extra_state_attributes(self) -> dict[str, str | float | None]:
         totals = self.coordinator.data
-        attrs = {"as_of": totals.as_of.isoformat()}
+        attrs: dict[str, str | float | None] = {"as_of": totals.as_of.isoformat()}
         if self.entity_description.key == "this_rain_year":
             attrs["rain_year_start"] = totals.rain_year_start.isoformat()
         elif self.entity_description.key == "last_rain_year":
             start = totals.rain_year_start
             attrs["rain_year_start"] = start.replace(year=start.year - 1).isoformat()
+        elif self.entity_description.key in ("last_rain", "days_since_rain"):
+            # Amount and threshold are in the same unit as the rain total sensors.
+            attrs["last_rain"] = totals.last_rain.isoformat() if totals.last_rain else None
+            attrs["amount"] = totals.last_rain_amount
+            attrs["threshold"] = self.coordinator.rain_threshold
+            attrs["unit"] = "in" if self.coordinator.inches else "mm"
+            attrs["searched_since"] = totals.last_rain_searched_since.isoformat()
         return attrs

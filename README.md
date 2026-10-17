@@ -14,8 +14,12 @@ All sensors belong to one device named **Rain**:
 | `sensor.rain_last_30_days` | Today plus the previous 29 days |
 | `sensor.rain_this_rain_year` | Since the start of the current rain year |
 | `sensor.rain_last_rain_year` | All of the previous rain year (optional) |
+| `sensor.rain_last_rain` | The most recent day that got at least the rain threshold (0.1 in by default) |
+| `sensor.rain_days_since_rain` | Days since that day; 0 if today counts |
 
 Values are in inches when Home Assistant uses US customary units, and in millimetres otherwise.
+
+The last-rain sensors look back at least a year. If no day in that window reached the threshold, they show unknown. Like `sensor.rain_today`, today's value includes rain still forecast for the rest of the day, so today can count as the last rain before the rain arrives.
 
 The integration updates once an hour, at a random minute picked at startup (never near the top of the hour, when Open-Meteo is busiest). To get fresh numbers right before an automation decides something, call `homeassistant.update_entity` on any of the sensors first.
 
@@ -33,5 +37,6 @@ Daily totals for the last 30 days come from Open-Meteo's forecast API. Older day
 - **Location:** defaults to your home location.
 - **Rain year starts in:** defaults to October, which matches the California water year (Oct 1 to Sep 30).
 - **Also show last rain year's total:** on by default.
+- **Counts as rain at:** how much rain a day needs to count for the last-rain sensors. Defaults to 0.1 in (2.54 mm).
 
 To change these later, open the integration and click **Configure**.
