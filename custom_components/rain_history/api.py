@@ -218,10 +218,11 @@ class OpenMeteoRainClient:
         def last_n(n: int) -> float:
             return total(today - timedelta(days=n - 1), today)
 
-        # Today counts once its total (including rain still forecast) reaches the threshold,
-        # same as the "today" sensor. Search every day seen, so a failed history refetch
-        # doesn't leave a gap between stale history and the recent window.
-        seen = self._known_days
+        # Today counts once the rain so far reaches the threshold. Rain still forecast doesn't,
+        # so a forecast that gets downgraded can't mark today as rained on. Search every day
+        # seen, so a failed history refetch doesn't leave a gap between stale history and
+        # the recent window.
+        seen = {**self._known_days, today: so_far_today}
         last_rain = max((d for d, mm in seen.items() if mm >= rain_threshold), default=None)
 
         return RainTotals(
