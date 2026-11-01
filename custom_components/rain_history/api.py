@@ -207,7 +207,10 @@ class OpenMeteoRainClient:
                     }
                     self._history_range = None  # still try a fresh fetch next update
 
-        days = {**self._history, **recent}
+        # Every total counts today as the rain so far, so rain that's only forecast doesn't
+        # count and the totals don't move with each model rerun. Only the "today" sensor
+        # keeps the whole-day figure.
+        days = {**self._history, **recent, today: so_far_today}
         self._known_days = {
             d: mm for d, mm in {**self._known_days, **days}.items() if d >= history_start
         }
@@ -218,15 +221,14 @@ class OpenMeteoRainClient:
         def last_n(n: int) -> float:
             return total(today - timedelta(days=n - 1), today)
 
-        # Today counts once the rain so far reaches the threshold. Rain still forecast doesn't,
-        # so a forecast that gets downgraded can't mark today as rained on. Search every day
-        # seen, so a failed history refetch doesn't leave a gap between stale history and
-        # the recent window.
-        seen = {**self._known_days, today: so_far_today}
+        # Today counts once the rain so far reaches the threshold. Search every day seen, so
+        # a failed history refetch doesn't leave a gap between stale history and the recent
+        # window.
+        seen = self._known_days
         last_rain = max((d for d, mm in seen.items() if mm >= rain_threshold), default=None)
 
         return RainTotals(
-            today=last_n(1),
+            today=round(recent[today], 2),
             so_far_today=so_far_today,
             last_3_days=last_n(3),
             last_7_days=last_n(7),

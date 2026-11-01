@@ -10,9 +10,9 @@ All sensors belong to one device named **Rain**:
 |---|---|
 | `sensor.rain_today` | Today's rain, including any still forecast for the rest of today |
 | `sensor.rain_so_far_today` | Today's rain up to the last full hour, with no forecast |
-| `sensor.rain_last_3_days` | Today plus the previous 2 days |
-| `sensor.rain_last_7_days` | Today plus the previous 6 days |
-| `sensor.rain_last_30_days` | Today plus the previous 29 days |
+| `sensor.rain_last_3_days` | Rain so far today plus the previous 2 days |
+| `sensor.rain_last_7_days` | Rain so far today plus the previous 6 days |
+| `sensor.rain_last_30_days` | Rain so far today plus the previous 29 days |
 | `sensor.rain_this_rain_year` | Since the start of the current rain year |
 | `sensor.rain_last_rain_year` | All of the previous rain year (optional) |
 | `sensor.rain_last_rain` | The most recent day that got at least the rain threshold (0.1 in by default) |
@@ -20,7 +20,7 @@ All sensors belong to one device named **Rain**:
 
 Values are in inches when Home Assistant uses US customary units, and in millimetres otherwise.
 
-`sensor.rain_today` can go up and down during the day. Open-Meteo reruns its weather models through the day, and each run can change how much rain it expects for the rest of today. `sensor.rain_so_far_today` only adds up hours that are over, so it mostly climbs, and by the end of the day it matches `sensor.rain_today`. It can still shift a little, because past hours are modeled too. Use it when you want rain that has actually fallen. The 3, 7 and 30 day totals include the whole-day value for today, like `sensor.rain_today`.
+`sensor.rain_today` can go up and down during the day. Open-Meteo reruns its weather models through the day, and each run can change how much rain it expects for the rest of today. `sensor.rain_so_far_today` only adds up hours that are over, so it mostly climbs, and by the end of the day it matches `sensor.rain_today`. It can still shift a little, because past hours are modeled too. Use it when you want rain that has actually fallen. The 3, 7 and 30 day and rain year totals count today the same way, so they don't move with the forecast either. Only `sensor.rain_today` includes rain still expected later today.
 
 The last-rain sensors look back at least a year. If no day in that window reached the threshold, they show unknown. For today they use `sensor.rain_so_far_today`, so today only counts as the last rain once that much rain has fallen, not when it's just forecast. The `amount` attribute for today is the rain so far, and it can go up later in the day.
 
