@@ -9,6 +9,7 @@ All sensors belong to one device named **Rain**:
 | Entity | What it is |
 |---|---|
 | `sensor.rain_today` | Today's rain, including any still forecast for the rest of today |
+| `sensor.rain_so_far_today` | Today's rain up to the last full hour, with no forecast |
 | `sensor.rain_last_3_days` | Today plus the previous 2 days |
 | `sensor.rain_last_7_days` | Today plus the previous 6 days |
 | `sensor.rain_last_30_days` | Today plus the previous 29 days |
@@ -19,7 +20,9 @@ All sensors belong to one device named **Rain**:
 
 Values are in inches when Home Assistant uses US customary units, and in millimetres otherwise.
 
-The last-rain sensors look back at least a year. If no day in that window reached the threshold, they show unknown. Like `sensor.rain_today`, today's value includes rain still forecast for the rest of the day, so today can count as the last rain before the rain arrives.
+`sensor.rain_today` can go up and down during the day. Open-Meteo reruns its weather models through the day, and each run can change how much rain it expects for the rest of today. `sensor.rain_so_far_today` only adds up hours that are over, so it mostly climbs, and by the end of the day it matches `sensor.rain_today`. It can still shift a little, because past hours are modeled too. Use it when you want rain that has actually fallen. The 3, 7 and 30 day totals include the whole-day value for today, like `sensor.rain_today`.
+
+The last-rain sensors look back at least a year. If no day in that window reached the threshold, they show unknown. For today they use `sensor.rain_so_far_today`, so today only counts as the last rain once that much rain has fallen, not when it's just forecast. The `amount` attribute for today is the rain so far, and it can go up later in the day.
 
 The integration updates once an hour, at a random minute picked at startup (never near the top of the hour, when Open-Meteo is busiest). To get fresh numbers right before an automation decides something, call `homeassistant.update_entity` on any of the sensors first.
 

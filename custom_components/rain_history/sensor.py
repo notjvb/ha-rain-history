@@ -35,6 +35,10 @@ class RainSensorDescription(SensorEntityDescription):
 # matching the entity IDs of the old configuration.yaml REST sensors.
 SENSORS: tuple[RainSensorDescription, ...] = (
     RainSensorDescription(key="today", translation_key="today", value_fn=lambda t: t.today),
+    # sensor.rain_so_far_today: today without the forecast part, so it mostly only climbs.
+    RainSensorDescription(
+        key="so_far_today", translation_key="so_far_today", value_fn=lambda t: t.so_far_today
+    ),
     RainSensorDescription(
         key="last_3_days", translation_key="last_3_days", value_fn=lambda t: t.last_3_days
     ),
