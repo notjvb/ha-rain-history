@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import aiohttp
@@ -40,6 +40,7 @@ class RainTotals:
     """
 
     today: float
+    so_far_today: float
     last_3_days: float
     last_7_days: float
     last_30_days: float
@@ -73,8 +74,31 @@ def _parse_daily(payload: dict[str, Any]) -> dict[date, float]:
         raise OpenMeteoError(f"Unexpected response: {err}") from err
 
 
+def _parse_so_far(payload: dict[str, Any], today: date) -> float:
+    """Sum of today's hours that have already ended, in the location's local time.
+
+    Each hourly value is the rain in the hour before its timestamp, and Open-Meteo's
+    daily sum adds up the hours stamped with that date, so this reaches the daily
+    total once the last hour is in.
+    """
+    try:
+        hourly = payload["hourly"]
+        offset = timedelta(seconds=payload["utc_offset_seconds"])
+        now = (datetime.now(UTC) + offset).replace(tzinfo=None)
+        return round(
+            sum(
+                float(mm or 0)
+                for t, mm in zip(hourly["time"], hourly["precipitation"], strict=True)
+                if (hour := datetime.fromisoformat(t)).date() == today and hour <= now
+            ),
+            2,
+        )
+    except (KeyError, TypeError, ValueError) as err:
+        raise OpenMeteoError(f"Unexpected response: {err}") from err
+
+
 class OpenMeteoRainClient:
-    """Fetches daily precipitation and turns it into rain totals."""
+    """Fetches precipitation and turns it into rain totals."""
 
     def __init__(
         self,
@@ -93,17 +117,17 @@ class OpenMeteoRainClient:
         # Every day seen so far, so a failed history refetch can fall back on it.
         self._known_days: dict[date, float] = {}
 
-    async def _get_daily(self, url: str, **params: Any) -> dict[date, float]:
+    async def _get(self, url: str, **params: Any) -> dict[str, Any]:
         for delay in (*RETRY_DELAYS, None):
             try:
-                return await self._get_daily_once(url, **params)
+                return await self._get_once(url, **params)
             except OpenMeteoError as err:
                 if not err.transient or delay is None:
                     raise
             await asyncio.sleep(delay)
         raise AssertionError("unreachable")
 
-    async def _get_daily_once(self, url: str, **params: Any) -> dict[date, float]:
+    async def _get_once(self, url: str, **params: Any) -> dict[str, Any]:
         query = {
             "latitude": self._latitude,
             "longitude": self._longitude,
@@ -128,18 +152,25 @@ class OpenMeteoRainClient:
         except ValueError as err:
             # Non-JSON body, e.g. an HTML error page from a proxy.
             raise OpenMeteoError(f"Bad response: {err}", transient=True) from err
-        return _parse_daily(payload)
+        return payload
 
     async def async_get_totals(
         self, start_month: int, include_last_rain_year: bool, rain_threshold: float
     ) -> RainTotals:
         """Totals for the location's today. rain_threshold is in the client's unit."""
-        # Today's value includes rain still forecast for the rest of the day.
-        recent = await self._get_daily(
-            FORECAST_URL, past_days=RECENT_DAYS - 1, forecast_days=1
+        # Today's daily value includes rain still forecast for the rest of the day, and
+        # moves as Open-Meteo reruns its models. The hourly values give the part that's
+        # already happened.
+        payload = await self._get(
+            FORECAST_URL,
+            past_days=RECENT_DAYS - 1,
+            forecast_days=1,
+            hourly="precipitation",
         )
+        recent = _parse_daily(payload)
         # Use the location's own calendar (timezone=auto), not HA's clock.
         today = max(recent)
+        so_far_today = _parse_so_far(payload, today)
         ry_start = rain_year_start(today, start_month)
         last_ry_start = ry_start.replace(year=ry_start.year - 1)
 
@@ -154,10 +185,12 @@ class OpenMeteoRainClient:
             history_end,
         ):
             try:
-                self._history = await self._get_daily(
-                    HISTORICAL_URL,
-                    start_date=history_start.isoformat(),
-                    end_date=history_end.isoformat(),
+                self._history = _parse_daily(
+                    await self._get(
+                        HISTORICAL_URL,
+                        start_date=history_start.isoformat(),
+                        end_date=history_end.isoformat(),
+                    )
                 )
                 self._history_range = (history_start, history_end)
             except OpenMeteoError:
@@ -193,6 +226,7 @@ class OpenMeteoRainClient:
 
         return RainTotals(
             today=last_n(1),
+            so_far_today=so_far_today,
             last_3_days=last_n(3),
             last_7_days=last_n(7),
             last_30_days=last_n(30),

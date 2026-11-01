@@ -40,6 +40,7 @@
   "entity": {
     "sensor": {
       "today": { "name": "Today" },
+      "so_far_today": { "name": "So far today" },
       "last_3_days": { "name": "Last 3 days" },
       "last_7_days": { "name": "Last 7 days" },
       "last_30_days": { "name": "Last 30 days" },
